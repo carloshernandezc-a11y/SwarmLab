@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SwarmLab</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #f4f6f8;
+      color: #1f2937;
+    }
+
+    header {
+      background: #111827;
+      color: white;
+      padding: 24px;
+      text-align: center;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 30px auto;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 12px 0;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    button {
+      background: #111827;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 18px;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    button:hover {
+      background: #374151;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      background: #ecfdf5;
+      margin-top: 12px;
+    }
+
+    .message {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 12px 0;
+    }
+
+    .instance {
+      color: #2563eb;
+      font-weight: bold;
+    }
+
+    .error {
+      color: #b91c1c;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>SwarmLab</h1>
+    <p>Aplicación desplegada con Docker Swarm</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Estado de la arquitectura</h2>
+
+      <button onclick="checkHealth()">
+        Consultar backend
+      </button>
+
+      <div id="health" class="status">
+        Presiona el botón para comprobar la comunicación.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Registrar mensaje</h2>
+
+      <input
+        id="messageInput"
+        type="text"
+        maxlength="200"
+        placeholder="Escribe un mensaje"
+      />
+
+      <button onclick="createMessage()">
+        Guardar mensaje
+      </button>
+
+      <p id="result"></p>
+    </section>
+
+    <section class="card">
+      <h2>Mensajes almacenados</h2>
+
+      <button onclick="loadMessages()">
+        Actualizar mensajes
+      </button>
+
+      <div id="messages"></div>
+    </section>
+  </main>
+
+  <script>
+    async function checkHealth() {
+      const healthContainer = document.getElementById("health");
+
+      try {
+        const response = await fetch("/api/health");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Error del backend");
+        }
+
+        healthContainer.innerHTML = `
+          <strong>Estado:</strong> ${data.status}<br>
+          <strong>Base de datos:</strong> ${data.database}<br>
+          <strong>Réplica que respondió:</strong>
+          <span class="instance">${data.instance}</span><br>
+          <strong>Fecha:</strong> ${data.timestamp}
+        `;
+      } catch (error) {
+        healthContainer.innerHTML = `
+          <span class="error">
+            No se pudo conectar con el backend: ${error.message}
+          </span>
+        `;
+      }
+    }
+
+    async function createMessage() {
+      const input = document.getElementById("messageInput");
+      const resultContainer = document.getElementById("result");
+      const text = input.value.trim();
+
+      if (!text) {
+        resultContainer.textContent = "Escribe un mensaje.";
+        resultContainer.className = "error";
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ text })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "No se pudo guardar");
+        }
+
+        resultContainer.className = "";
+        resultContainer.innerHTML = `
+          Mensaje guardado por la réplica:
+          <span class="instance">${data.instance}</span>
+        `;
+
+        input.value = "";
+        loadMessages();
+      } catch (error) {
+        resultContainer.className = "error";
+        resultContainer.textContent = error.message;
+      }
+    }
+
+    async function loadMessages() {
+      const messagesContainer = document.getElementById("messages");
+
+      try {
+        const response = await fetch("/api/messages");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Error al consultar mensajes");
+        }
+
+        if (data.messages.length === 0) {
+          messagesContainer.innerHTML = "<p>No hay mensajes registrados.</p>";
+          return;
+        }
+
+        messagesContainer.innerHTML = data.messages
+          .map(
+            message => `
+              <div class="message">
+                <strong>${escapeHtml(message.text)}</strong><br>
+                Guardado por:
+                <span class="instance">
+                  ${escapeHtml(message.backend_instance)}
+                </span><br>
+                <small>
+                  ${new Date(message.created_at).toLocaleString()}
+                </small>
+              </div>
+            `
+          )
+          .join("");
+      } catch (error) {
+        messagesContainer.innerHTML = `
+          <p class="error">${error.message}</p>
+        `;
+      }
+    }
+
+    function escapeHtml(value) {
+      const element = document.createElement("div");
+      element.textContent = value;
+      return element.innerHTML;
+    }
+
+    checkHealth();
+    loadMessages();
+  </script>
+</body>
+</html>
